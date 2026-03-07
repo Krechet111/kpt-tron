@@ -1,42 +1,147 @@
-# Скрипты управления TRON FullNode
+# KPT Scripts
 
-В этом каталоге находятся скрипты для автоматического деплоя, управления и проверки статуса узла TRON (FullNode) на удаленном сервере.
+Utility and deployment scripts for the KPT TRON node.
 
-## Список скриптов
+## Directory Structure
 
-### 1. `deploy.sh`
-Основной скрипт для развертывания приложения.
-*   **Что делает:**
-    1.  Собирает проект локально (используя Gradle и Java 8).
-    2.  Подготавливает удаленный сервер (создает директории, скрипты запуска/остановки).
-    3.  Останавливает текущую запущенную версию на сервере.
-    4.  Загружает новый `FullNode.jar` и конфигурацию.
-    5.  Запускает приложение на сервере.
-*   **Важно:** Внутри скрипта жестко прописан путь к Java 8 (`JAVA_HOME`). Если вы запускаете деплой с другой машины или ОС (например, Linux или Windows), вам необходимо отредактировать переменную `JAVA_HOME` в начале файла `deploy.sh`, указав корректный путь к JDK 8 на вашей локальной машине.
+```
+kpt/scripts/
+├── get-node-height.sh      # Get current block number from local node
+├── getnowblock.sh          # Get current block (full JSON) from local node
+├── getbalance.sh           # Get account info/balance by base58 address
+├── getaccaunt.sh           # Get account info by hex address
+├── validateaddress.sh      # Validate a TRON address via TronGrid API
+└── deploy/
+    ├── deploy-to-server.sh     # Full build & deploy to remote server
+    ├── start-on-server.sh      # Start FullNode service on remote server
+    ├── stop-on-server.sh       # Stop FullNode service on remote server
+    ├── check-server.sh         # Check service status on remote server
+    └── remove-from-server.sh   # Remove all project data from remote server
+```
 
-### 2. `stop.sh`
-Скрипт остановки сервиса.
-*   **Что делает:** Подключается к удаленному серверу по SSH и корректно завершает процесс `FullNode.jar` (используя `kill` или `kill -9`, если процесс завис).
+---
 
-### 3. `check.sh`
-Скрипт проверки состояния.
-*   **Что делает:**
-    1.  Проверяет наличие запущенного процесса Java на сервере.
-    2.  Выполняет локальный запрос (на самом сервере) к API (`http://127.0.0.1:8091/wallet/getnowblock`), чтобы убедиться, что HTTP-интерфейс отвечает.
+## Node Query Scripts
 
-### 4. `remove.sh` (бывший clean.sh)
-Скрипт полного удаления.
-*   **Что делает:**
-    1.  Останавливает узел.
-    2.  **Безвозвратно удаляет** всю директорию проекта на сервере (`/home/bisq/kpt/kpt-tron`), включая базу данных, логи и конфигурации.
-*   **Использование:** Требует подтверждения (`y`) перед выполнением. Используйте с осторожностью.
+These scripts query the TRON node HTTP API directly.
 
-### 5. `curl_getnowblock.sh`
-Скрипт для быстрой внешней проверки API.
-*   **Что делает:** Выполняет `curl` запрос с вашей локальной машины на публичный IP сервера (порт 8091), запрашивая информацию о последнем блоке. Удобно для проверки доступности узла "снаружи".
+**Default node:** `http://89.23.100.234:8091`
 
-## Требования
+### `get-node-height.sh`
 
-*   Наличие SSH-доступа к серверу по ключу (без ввода пароля).
-*   Локально установленная Java 8 (JDK) для сборки проекта.
-*   Настроенный доступ к интернету на сервере для скачивания зависимостей (если требуется).
+Returns the current block number from the local node.
+
+```bash
+bash get-node-height.sh
+# Output: 12345678
+```
+
+### `getnowblock.sh`
+
+Returns the full current block JSON from the local node.
+
+```bash
+bash getnowblock.sh
+```
+
+### `getbalance.sh`
+
+Returns account info (including balance) for a base58-encoded address using the local node.
+
+Edit the `ADDR_BASE58` variable in the script to query a different address.
+
+```bash
+bash getbalance.sh
+```
+
+### `getaccaunt.sh`
+
+Returns account info for a hex-encoded address using the local node.
+
+Edit the `FROM_HEX` variable in the script to query a different address.
+
+```bash
+bash getaccaunt.sh
+```
+
+### `validateaddress.sh`
+
+Validates a TRON address using the public TronGrid API (`https://api.trongrid.io`).
+
+Edit the `ADDR` variable in the script to check a different address.
+
+```bash
+bash validateaddress.sh
+```
+
+---
+
+## Deploy Scripts
+
+These scripts manage the remote server deployment over SSH.
+
+**Remote host:** `bisq@89.23.100.234`
+**Remote directory:** `/home/bisq/kpt/kpt-tron`
+
+### Prerequisites
+
+- SSH access to `bisq@89.23.100.234`
+- Java 8 (`zulu-8.jdk`) installed locally (for build)
+- Java 8 (`java-8-openjdk-amd64`) installed on the remote server
+
+---
+
+### `deploy/deploy-to-server.sh`
+
+Full deployment pipeline: builds `FullNode.jar` locally, prepares the remote environment, transfers artifacts, and starts the service.
+
+```bash
+bash kpt/scripts/deploy/deploy-to-server.sh
+```
+
+Steps performed:
+1. Builds `FullNode.jar` via Gradle (`buildFullNodeJar`)
+2. Creates remote helper scripts (`start.sh`, `stop.sh`, `status.sh`) on the server
+3. Stops the currently running service (if any)
+4. Transfers `FullNode.jar` and `config.conf` to the server
+5. Starts the service
+
+---
+
+### `deploy/start-on-server.sh`
+
+Starts the FullNode service on the remote server.
+
+```bash
+bash kpt/scripts/deploy/start-on-server.sh
+```
+
+---
+
+### `deploy/stop-on-server.sh`
+
+Stops the FullNode service on the remote server.
+
+```bash
+bash kpt/scripts/deploy/stop-on-server.sh
+```
+
+---
+
+### `deploy/check-server.sh`
+
+Checks whether the FullNode service is running and whether the HTTP API (port 8091) is responding.
+
+```bash
+bash kpt/scripts/deploy/check-server.sh
+```
+
+---
+
+### `deploy/remove-from-server.sh`
+
+**Destructive.** Stops the service and removes the entire project directory (`/home/bisq/kpt/kpt-tron`) from the remote server. Prompts for confirmation before proceeding.
+
+```bash
+bash kpt/scripts/deploy/remove-from-server.sh
+```
