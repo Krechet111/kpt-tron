@@ -6,7 +6,7 @@ HOST="bisq@89.23.100.234"
 REMOTE_DIR="/home/bisq/kpt/kpt-tron"
 # Resolve Project Root relative to this script (kpt/scripts/deploy.sh -> ../../)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo "=== Starting Deployment to $HOST ==="
 echo "Project Root: $PROJECT_ROOT"
