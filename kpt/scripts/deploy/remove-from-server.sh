@@ -1,29 +1,28 @@
 #!/bin/bash
-HOST="bisq@89.23.100.234"
+
+# Configuration
+REMOTE_USER="bisq"
+REMOTE_HOST="89.23.100.234"
 REMOTE_DIR="/home/bisq/kpt/kpt-tron"
 
-echo ">>> Cleaning data on $HOST..."
-read -p "Are you sure you want to delete ALL DATA on $HOST? (y/n) " -n 1 -r
+echo "=== Removing FullNode from $REMOTE_HOST ==="
+echo "Target: $REMOTE_DIR"
+
+read -p "Are you sure you want to delete the FullNode application and all data from the server? (y/N) " -n 1 -r
 echo
-if [[ $REPLY =~ ^[Yy]$ ]]
-then
-    # We send the clean logic directly via SSH to avoid keeping a persistent dangerous script if possible,
-    # or just write and execute it. Using Here-Doc for safety and visibility.
-    ssh $HOST "bash -s" << 'EOF'
-    # Stop first - try both paths just in case
-    if [ -f /home/bisq/kpt/kpt-tron/scripts/stop.sh ]; then
-        bash /home/bisq/kpt/kpt-tron/scripts/stop.sh
-    else
-        # Manually kill if script missing
-        PID=$(pgrep -f "FullNode.jar")
-        if [ -n "$PID" ]; then kill -9 $PID; fi
-    fi
-    
-    # Remove the entire project directory
-    echo "Removing /home/bisq/kpt/kpt-tron..."
-    rm -rf /home/bisq/kpt/kpt-tron
-    echo "Clean complete. All files removed."
-EOF
-else
-    echo "Aborted."
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Operation cancelled."
+    exit 1
 fi
+
+ssh "$REMOTE_USER@$REMOTE_HOST" "bash -s" << EOF
+    # Stop first
+    pkill -f 'FullNode.jar' || true
+
+    if [ -d "$REMOTE_DIR" ]; then
+        rm -rf "$REMOTE_DIR"
+        echo "✅ Application files removed."
+    else
+        echo "ℹ️  Application directory not found."
+    fi
+EOF
