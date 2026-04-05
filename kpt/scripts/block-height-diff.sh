@@ -1,70 +1,87 @@
 #!/bin/bash
 
-# Файл, в котором скрипт будет хранить данные прошлого запуска для расчета скорости
+# Файл состояния
 STATE_FILE="/tmp/tron_sync_state.txt"
 
 echo "⏳ Опрашиваем локальную ноду (API)..."
-NODE_HEIGHT=$(curl -s -X POST http://89.23.100.234:8091/wallet/getnowblock -d '{}' | grep -o '"number":[0-9]*' | cut -d: -f2)
+NODE_HEIGHT=$(curl -s -m 5 -X POST http://89.23.100.234:8091/wallet/getnowblock -d '{}' | grep -o '"number":[0-9]*' | cut -d: -f2)
 
 if [ -z "$NODE_HEIGHT" ]; then
-    echo "❌ Ошибка: Не удалось получить ответ от локальной ноды. Проверьте, запущена ли она и открыт ли порт 8091."
+    echo "❌ Ошибка: Не удалось получить ответ от локальной ноды."
     exit 1
 fi
 
 echo "⏳ Запрашиваем высоту Tron Mainnet..."
-MAINNET_JSON=$(curl -s https://api.trongrid.io/wallet/getnowblock)
-MAINNET_HEIGHT=$(echo "$MAINNET_JSON" | jq -r '.block_header.raw_data.number')
+MAX_RETRIES=3
+RETRY_COUNT=0
+MAINNET_HEIGHT=""
 
-if [ -z "$MAINNET_HEIGHT" ] || [ "$MAINNET_HEIGHT" == "null" ]; then
-    echo "❌ Ошибка: Не удалось получить данные от Tron API."
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    MAINNET_JSON=$(curl -s -m 10 https://api.trongrid.io/wallet/getnowblock)
+    MAINNET_HEIGHT=$(echo "$MAINNET_JSON" | jq -e -r '.block_header.raw_data.number' 2>/dev/null)
+
+    if [[ "$MAINNET_HEIGHT" =~ ^[0-9]+$ ]]; then
+        break
+    fi
+
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    echo "⚠️ TronGrid API вернул неполный ответ. Попытка $RETRY_COUNT из $MAX_RETRIES..."
+    sleep 2
+done
+
+if [ -z "$MAINNET_HEIGHT" ] || ! [[ "$MAINNET_HEIGHT" =~ ^[0-9]+$ ]]; then
+    echo "❌ Ошибка: Tron API недоступен."
     exit 1
 fi
 
 # Вычисляем текущую разницу
 DIFFERENCE=$((MAINNET_HEIGHT - NODE_HEIGHT))
-
-# Получаем текущее время (для красивого вывода и для вычислений в секундах)
 CURRENT_TIME=$(date "+%Y-%m-%d %H:%M:%S")
 CURRENT_TS=$(date +%s)
 
-# --- БЛОК РАСЧЕТА ВРЕМЕНИ (ETA) ---
+# --- БЛОК РАСЧЕТА ВРЕМЕНИ И СКОРОСТИ ---
 ETA_INFO=""
 if [ "$DIFFERENCE" -gt 0 ]; then
-    # Проверяем, есть ли данные от предыдущего запуска
     if [ -f "$STATE_FILE" ]; then
-        read -r PREV_TS PREV_DIFF < "$STATE_FILE"
+        read -r PREV_TS PREV_NODE PREV_MAINNET < "$STATE_FILE"
 
-        TIME_ELAPSED=$((CURRENT_TS - PREV_TS))
-        BLOCKS_CAUGHT_UP=$((PREV_DIFF - DIFFERENCE))
-
-        # Защита от деления на ноль или слишком быстрых перезапусков (меньше 5 секунд)
-        if [ "$TIME_ELAPSED" -gt 5 ]; then
-            if [ "$BLOCKS_CAUGHT_UP" -gt 0 ]; then
-                # Считаем скорость (догоняемых блоков в минуту)
-                SPEED_PER_MIN=$(( BLOCKS_CAUGHT_UP * 60 / TIME_ELAPSED ))
-
-                # Считаем, сколько секунд осталось до полной синхронизации
-                ETA_SECONDS=$(( (DIFFERENCE * TIME_ELAPSED) / BLOCKS_CAUGHT_UP ))
-                ETA_HOURS=$(( ETA_SECONDS / 3600 ))
-                ETA_MINS=$(( (ETA_SECONDS % 3600) / 60 ))
-
-                # Вычисляем точное время завершения
-                FINISH_TIME=$(date -d "@$((CURRENT_TS + ETA_SECONDS))" "+%Y-%m-%d %H:%M" 2>/dev/null || date -r $((CURRENT_TS + ETA_SECONDS)) "+%Y-%m-%d %H:%M" 2>/dev/null)
-
-                ETA_INFO="🚀 Скорость догона: ~$'${SPEED_PER_MIN}' блоков/мин\n⏳ Осталось до финиша: ${ETA_HOURS} ч ${ETA_MINS} мин (Ориентировочно: ${FINISH_TIME})"
-            else
-                ETA_INFO="⚠️ Нода отстает сильнее, чем догоняет (или стоит на месте). Сеть растет быстрее."
-            fi
+        # Защита от старого формата файла состояния
+        if [ -z "$PREV_MAINNET" ]; then
+            ETA_INFO="⏳ Формат скрипта обновлен. Расчет скорости появится при следующем запуске."
         else
-            ETA_INFO="⏳ Нужно чуть больше времени для расчета. Запустите скрипт еще раз через минуту."
+            TIME_ELAPSED=$((CURRENT_TS - PREV_TS))
+            LOCAL_PROCESSED=$((NODE_HEIGHT - PREV_NODE))
+            MAINNET_PROCESSED=$((MAINNET_HEIGHT - PREV_MAINNET))
+
+            if [ "$TIME_ELAPSED" -gt 5 ]; then
+                # Считаем скорости
+                LOCAL_SPEED=$(( LOCAL_PROCESSED * 60 / TIME_ELAPSED ))
+                MAINNET_SPEED=$(( MAINNET_PROCESSED * 60 / TIME_ELAPSED ))
+                CATCH_UP_SPEED=$(( LOCAL_SPEED - MAINNET_SPEED ))
+
+                SPEED_BLOCK="⚡ Скорость локальной ноды: ~${LOCAL_SPEED} блоков/мин\n🌐 Скорость сети (Mainnet):  ~${MAINNET_SPEED} блоков/мин\n----------------------------------------"
+
+                if [ "$CATCH_UP_SPEED" -gt 0 ]; then
+                    ETA_SECONDS=$(( DIFFERENCE * 60 / CATCH_UP_SPEED ))
+                    ETA_HOURS=$(( ETA_SECONDS / 3600 ))
+                    ETA_MINS=$(( (ETA_SECONDS % 3600) / 60 ))
+                    FINISH_TIME=$(date -d "@$((CURRENT_TS + ETA_SECONDS))" "+%Y-%m-%d %H:%M" 2>/dev/null || date -r $((CURRENT_TS + ETA_SECONDS)) "+%Y-%m-%d %H:%M" 2>/dev/null)
+
+                    ETA_INFO="${SPEED_BLOCK}\n📈 Чистая скорость догона:  ~${CATCH_UP_SPEED} блоков/мин\n⏳ Осталось до финиша:      ${ETA_HOURS} ч ${ETA_MINS} мин (Ориентировочно: ${FINISH_TIME})"
+                else
+                    ETA_INFO="${SPEED_BLOCK}\n⚠️ Нода обрабатывает блоки медленнее, чем они появляются в сети. Отставание увеличивается."
+                fi
+            else
+                ETA_INFO="⏳ Слишком быстрый перезапуск. Запустите скрипт через минуту."
+            fi
         fi
     else
-        ETA_INFO="⏳ Это первый запуск. Расчет времени появится при следующем запуске."
+        ETA_INFO="⏳ Это первый запуск. Расчет скорости появится при следующем запуске."
     fi
-    # Сохраняем текущие данные для следующего запуска
-    echo "$CURRENT_TS $DIFFERENCE" > "$STATE_FILE"
+
+    # Сохраняем новые данные
+    echo "$CURRENT_TS $NODE_HEIGHT $MAINNET_HEIGHT" > "$STATE_FILE"
 else
-    # Если синхронизировались, удаляем временный файл
     rm -f "$STATE_FILE"
 fi
 # -----------------------------------
