@@ -1,0 +1,11 @@
+[Unit]
+Description=KPT Tron block-height watchdog (restart node if consensus stalls)
+Documentation=file:///home/bisq/kpt/kpt-tron/deploy/README.md
+# Only meaningful once the node unit exists.
+After=kpt-tron.service
+
+[Service]
+Type=oneshot
+# Runs as root (no User=) so it can `systemctl restart kpt-tron` directly.
+ExecStart=/home/bisq/kpt/kpt-tron/deploy/kpt-tron-watchdog.sh
+# Watchdog output goes to the journal: journalctl -u kpt-tron-watchdog

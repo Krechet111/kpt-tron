@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the kpt-tron block-height watchdog every 2 minutes
+
+[Timer]
+# First run 5 min after boot (let the node load its DB), then every 2 min.
+OnBootSec=5min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=kpt-tron-watchdog.service
+
+[Install]
+WantedBy=timers.target

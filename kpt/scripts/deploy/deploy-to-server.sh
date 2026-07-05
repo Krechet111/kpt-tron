@@ -20,63 +20,66 @@ echo ">>> Building FullNode.jar..."
 cd "$PROJECT_ROOT"
 ./gradlew :framework:buildFullNodeJar -x test
 
-# 2. Prepare Remote Directory
+# 2. Prepare Remote Directory + sync deploy artifacts (unit/swap/sudoers helpers)
 echo ">>> Preparing remote environment..."
-ssh "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_DIR/logs"
+ssh "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_DIR/logs $REMOTE_DIR/deploy"
+rsync -avz \
+    "$SCRIPT_DIR/kpt-tron.service" \
+    "$SCRIPT_DIR/setup-swap.sh" \
+    "$SCRIPT_DIR/sudoers-kpt-tron" \
+    "$SCRIPT_DIR/install-root.sh" \
+    "$SCRIPT_DIR/kpt-tron-watchdog.sh" \
+    "$SCRIPT_DIR/kpt-tron-watchdog.service" \
+    "$SCRIPT_DIR/kpt-tron-watchdog.timer" \
+    "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/deploy/"
 
-# 3. Stop Remote Service
+# 3. Stop Remote Service (graceful, systemd-aware)
 echo ">>> Stopping remote service..."
 ssh "$REMOTE_USER@$REMOTE_HOST" "bash -s" << 'EOF'
-    if pgrep -f 'FullNode.jar' > /dev/null; then
-        pkill -f 'FullNode.jar'
-        echo "✅ Signal sent to stop FullNode."
-        sleep 5
-        if pgrep -f 'FullNode.jar' > /dev/null; then
-            echo "⚠️  Process still running, forcing kill..."
-            pkill -9 -f 'FullNode.jar'
-        fi
-        echo "✅ FullNode stopped."
+    if systemctl cat kpt-tron.service >/dev/null 2>&1; then
+        # Unconditional idempotent stop whenever the unit exists — do NOT branch on
+        # is-active. A transient 'activating (auto-restart)'/'deactivating' state would
+        # otherwise fall through to the pkill path below, killing the node OUTSIDE
+        # systemd, which then auto-restarts it — racing the jar overwrite.
+        echo "Graceful systemd stop (idempotent; up to 300s for checkpoint flush)..."
+        sudo systemctl stop kpt-tron
+        echo "✅ Stopped (or was already inactive)."
+    elif pgrep -f 'FullNode.jar' >/dev/null; then
+        echo "Legacy process (no systemd unit) — SIGTERM (graceful)..."
+        pkill -TERM -f 'FullNode.jar'
+        for i in $(seq 1 60); do pgrep -f 'FullNode.jar' >/dev/null || break; sleep 2; done
+        echo "✅ Stopped."
     else
-        echo "ℹ️  FullNode was not running."
+        echo "ℹ️  Node was not running."
     fi
 EOF
 
-# 4. Transfer Files
-echo ">>> Transferring artifacts..."
+# 4. Transfer artifacts
+echo ">>> Transferring FullNode.jar + config.conf..."
 rsync -avz "$PROJECT_ROOT/framework/build/libs/FullNode.jar" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 rsync -avz "$PROJECT_ROOT/framework/src/main/resources/config.conf" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
 # 5. Start Remote Service
 echo ">>> Starting remote service..."
-ssh "$REMOTE_USER@$REMOTE_HOST" "bash -s" << EOF
-    APP_DIR="$REMOTE_DIR"
-    LOG_FILE="$REMOTE_DIR/logs/tron.log"
-
-    if [ -f "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java" ]; then
-        JAVA_CMD="/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
-    elif [ -f "/usr/lib/jvm/java-8-openjdk-amd64/bin/java" ]; then
-        JAVA_CMD="/usr/lib/jvm/java-8-openjdk-amd64/bin/java"
-    else
-        JAVA_CMD="java"
-        echo "⚠️  Explicit Java 8 path not found, using default 'java'."
+ssh "$REMOTE_USER@$REMOTE_HOST" "bash -s" << 'EOF'
+    if ! systemctl cat kpt-tron.service >/dev/null 2>&1; then
+        echo "❌ kpt-tron.service not installed. Run: sudo bash /home/bisq/kpt/kpt-tron/deploy/install-root.sh"
+        echo "   (skipping start — install the unit once, then re-run deploy or start-on-server.sh)"
+        exit 1
     fi
-
-    cd "\$APP_DIR"
-    nohup \$JAVA_CMD -Dapplication.appName=kpt-tron-fullnode -jar "\$APP_DIR/FullNode.jar" -c "\$APP_DIR/config.conf" -d "\$APP_DIR/output-directory" > "\$LOG_FILE" 2>&1 &
-
-    echo "Process started. Waiting for initialization..."
-    sleep 10
+    sudo systemctl start kpt-tron
+    sleep 5
 EOF
 
 # 6. Verify
 echo "=== Verifying Deployment ==="
 ssh "$REMOTE_USER@$REMOTE_HOST" "bash -s" << 'EOF'
-    if pgrep -f 'FullNode.jar' > /dev/null; then
-        PID=$(pgrep -f 'FullNode.jar')
-        echo "✅ SUCCESS: FullNode is running (PID: $PID)"
+    if systemctl is-active --quiet kpt-tron; then
+        echo "✅ SUCCESS: kpt-tron is active."
+        systemctl status kpt-tron --no-pager -l | head -n 10
     else
-        echo "❌ ERROR: FullNode failed to start."
-        tail -n 20 /home/bisq/kpt/kpt-tron/logs/tron.log
+        echo "❌ ERROR: kpt-tron is not active."
+        journalctl -u kpt-tron --no-pager -n 20
         exit 1
     fi
 EOF

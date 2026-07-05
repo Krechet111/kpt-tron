@@ -1,0 +1,4 @@
+# Allow the bisq user to manage ONLY the kpt-tron service without a password,
+# so the deploy/start/stop/restart/status scripts work non-interactively over SSH.
+# Install to /etc/sudoers.d/kpt-tron with mode 0440 (see install-root.sh).
+bisq ALL=(root) NOPASSWD: /usr/bin/systemctl start kpt-tron, /usr/bin/systemctl start kpt-tron.service, /usr/bin/systemctl stop kpt-tron, /usr/bin/systemctl stop kpt-tron.service, /usr/bin/systemctl restart kpt-tron, /usr/bin/systemctl restart kpt-tron.service, /usr/bin/systemctl status kpt-tron, /usr/bin/systemctl status kpt-tron.service, /usr/bin/systemctl is-active kpt-tron, /usr/bin/systemctl is-active kpt-tron.service, /usr/bin/systemctl enable kpt-tron, /usr/bin/systemctl enable kpt-tron.service, /usr/bin/systemctl disable kpt-tron, /usr/bin/systemctl disable kpt-tron.service, /usr/bin/systemctl is-enabled kpt-tron, /usr/bin/systemctl is-enabled kpt-tron.service
