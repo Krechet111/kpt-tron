@@ -4,7 +4,7 @@
 # flush its RocksDB checkpoint — this is the SAFE stop. Do NOT pkill -9.
 
 REMOTE_USER="bisq"
-REMOTE_HOST="89.23.100.234"
+REMOTE_HOST="${REMOTE_HOST:-186.246.12.181}"
 
 echo "=== Stopping kpt-tron service on $REMOTE_HOST ==="
 

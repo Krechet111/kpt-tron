@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 REMOTE_USER="bisq"
-REMOTE_HOST="89.23.100.234"
+REMOTE_HOST="${REMOTE_HOST:-186.246.12.181}"
 REMOTE_DIR="/home/bisq/kpt/kpt-tron"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"

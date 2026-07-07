@@ -2,7 +2,7 @@
 
 # Configuration
 REMOTE_USER="bisq"
-REMOTE_HOST="89.23.100.234"
+REMOTE_HOST="${REMOTE_HOST:-186.246.12.181}"
 LOG_FILE="/home/bisq/kpt/kpt-tron/logs/tron.log"
 
 # Usage: ./logs-server.sh [full|tail|N]

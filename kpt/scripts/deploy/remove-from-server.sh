@@ -2,7 +2,7 @@
 
 # Configuration
 REMOTE_USER="bisq"
-REMOTE_HOST="89.23.100.234"
+REMOTE_HOST="${REMOTE_HOST:-186.246.12.181}"
 REMOTE_DIR="/home/bisq/kpt/kpt-tron"
 
 echo "=== Removing FullNode from $REMOTE_HOST ==="

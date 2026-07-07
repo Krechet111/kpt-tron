@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NODE_URL="http://89.23.100.234:8091"
+NODE_URL="http://186.246.12.181:8091"
 # NODE_URL="https://api.trongrid.io"
 
 if [ -z "$1" ]; then

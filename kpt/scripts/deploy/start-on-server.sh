@@ -4,7 +4,7 @@
 # install-root.sh (see deploy/README.md).
 
 REMOTE_USER="bisq"
-REMOTE_HOST="89.23.100.234"
+REMOTE_HOST="${REMOTE_HOST:-186.246.12.181}"
 
 echo "=== Starting kpt-tron service on $REMOTE_HOST ==="
 

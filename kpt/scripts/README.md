@@ -26,7 +26,7 @@ kpt/scripts/
 
 These scripts query the TRON node HTTP API directly.
 
-**Default node:** `http://89.23.100.234:8091`
+**Default node:** `http://186.246.12.181:8091`
 
 ### `get-node-height.sh`
 
@@ -81,12 +81,12 @@ bash validate-address.sh
 
 These scripts manage the remote server deployment over SSH. See [`deploy/README.md`](deploy/README.md) for full documentation.
 
-**Remote host:** `bisq@89.23.100.234`
+**Remote host:** `bisq@186.246.12.181`
 **Remote directory:** `/home/bisq/kpt/kpt-tron`
 
 ### Prerequisites
 
-- SSH access to `bisq@89.23.100.234`
+- SSH access to `bisq@186.246.12.181`
 - Java 8 (`zulu-8.jdk`) installed locally (for build)
 - Java 8 (`java-8-openjdk-amd64`) installed on the remote server
 - `rsync` installed locally

@@ -6,14 +6,14 @@
 
 ## Конфигурация
 
-- **Host**: `89.23.100.234`
+- **Host**: `186.246.12.181`
 - **User**: `bisq`
 - **Remote Directory**: `/home/bisq/kpt/kpt-tron`
 - **systemd unit**: `kpt-tron.service`
 
 ## Предварительные требования
 
-- SSH-доступ к `bisq@89.23.100.234` (по ключу)
+- SSH-доступ к `bisq@186.246.12.181` (по ключу)
 - Java 8 (`zulu-8.jdk`) локально — для сборки; Java 8 (`java-8-openjdk-amd64`) на сервере
 - `rsync` локально
 

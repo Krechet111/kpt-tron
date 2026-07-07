@@ -4,7 +4,7 @@
 STATE_FILE="/tmp/tron_sync_state.txt"
 
 echo "⏳ Опрашиваем локальную ноду (API)..."
-NODE_HEIGHT=$(curl -s -m 5 -X POST http://89.23.100.234:8091/wallet/getnowblock -d '{}' | grep -o '"number":[0-9]*' | cut -d: -f2)
+NODE_HEIGHT=$(curl -s -m 5 -X POST http://186.246.12.181:8091/wallet/getnowblock -d '{}' | grep -o '"number":[0-9]*' | cut -d: -f2)
 
 if [ -z "$NODE_HEIGHT" ]; then
     echo "❌ Ошибка: Не удалось получить ответ от локальной ноды."

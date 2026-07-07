@@ -2,7 +2,7 @@
 # Restart the Tron FullNode via systemd (graceful SIGTERM stop, then start).
 
 REMOTE_USER="bisq"
-REMOTE_HOST="89.23.100.234"
+REMOTE_HOST="${REMOTE_HOST:-186.246.12.181}"
 
 echo "=== Restarting kpt-tron service on $REMOTE_HOST ==="
 
