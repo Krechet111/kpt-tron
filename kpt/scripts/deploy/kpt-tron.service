@@ -1,0 +1,65 @@
+[Unit]
+Description=KPT Tron FullNode (java-tron GreatVoyage)
+Documentation=https://github.com/tronprotocol/java-tron
+After=network-online.target
+Wants=network-online.target
+# Never rate-limit restarts — we always want the node coming back up.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=bisq
+Group=bisq
+WorkingDirectory=/home/bisq/kpt/kpt-tron
+
+# Java 8 is required by this java-tron build.
+Environment=JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+
+# Heap is capped explicitly (was unbounded before) to avoid the JVM ballooning
+# past physical RAM and being OOM-killed — the likely cause of the state-DB
+# corruption incident. Tune -Xmx/-Xms to the box; RocksDB also uses off-heap
+# memory, so leave several GB of headroom below total RAM.
+ExecStart=/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java \
+    -Dapplication.appName=kpt-tron-fullnode \
+    -Xms6g -Xmx12g \
+    -XX:+HeapDumpOnOutOfMemoryError \
+    -XX:HeapDumpPath=/home/bisq/kpt/kpt-tron/logs \
+    -jar /home/bisq/kpt/kpt-tron/FullNode.jar \
+    -c /home/bisq/kpt/kpt-tron/config.conf \
+    -d /home/bisq/kpt/kpt-tron/output-directory
+
+# Graceful stop: java-tron flushes its RocksDB checkpoint on SIGTERM.
+# NEVER SIGKILL — an interrupted flush is what corrupts the state DB.
+# Give the flush plenty of time before systemd escalates to SIGKILL.
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=300
+
+# java-tron runs its shutdown hook on SIGTERM and then exits 143 (128+15), NOT 0.
+# Without this, systemd reports every clean stop as `failed` AND — worse — treats
+# a 143 exit as a failure that trips Restart=on-failure below (auto-restarting the
+# node after any SIGTERM). Marking 143/SIGTERM as success makes a graceful stop end
+# as `inactive`; a real crash (code 1) or OOM-kill (SIGKILL) still counts as failure.
+SuccessExitStatus=143 SIGTERM
+
+# Auto-restart on crash/OOM (does NOT trigger on a clean `systemctl stop`).
+# NOTE: a consensus stall (node alive but stuck on a bad block) does NOT exit
+# the process, so Restart won't catch it — the height watchdog is what detects
+# that failure mode.
+Restart=on-failure
+RestartSec=15
+
+# Prefer the kernel to kill something else before this node under memory
+# pressure (this box is single-purpose). Combined with the -Xmx cap + swap.
+OOMScoreAdjust=-500
+
+# java-tron opens many peer sockets + RocksDB files.
+LimitNOFILE=65536
+
+# Console/startup output (pre-logback, uncaught exceptions) goes here.
+# Structured application logs are still written by logback to logs/tron.log.
+StandardOutput=append:/home/bisq/kpt/kpt-tron/logs/console.log
+StandardError=append:/home/bisq/kpt/kpt-tron/logs/console.log
+
+[Install]
+WantedBy=multi-user.target

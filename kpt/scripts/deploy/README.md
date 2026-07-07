@@ -1,140 +1,112 @@
 # Скрипты деплоя KPT TRON Node
 
-В этом каталоге находятся скрипты для деплоя, управления и мониторинга **KPT TRON FullNode** на удалённом сервере.
+Скрипты для деплоя, управления и мониторинга **KPT TRON FullNode** на удалённом
+сервере. Начиная с 2026-07-05 нода работает как **systemd-сервис `kpt-tron`**
+(раньше запускалась вручную через `nohup`).
 
 ## Конфигурация
-
-Все скрипты подключаются к удалённому серверу по **SSH**. Конфигурация по умолчанию:
 
 - **Host**: `89.23.100.234`
 - **User**: `bisq`
 - **Remote Directory**: `/home/bisq/kpt/kpt-tron`
-
-> Примечание: убедитесь, что у вас настроен доступ по SSH-ключу к серверу или будьте готовы ввести пароль.
+- **systemd unit**: `kpt-tron.service`
 
 ## Предварительные требования
 
-- SSH-доступ к `bisq@89.23.100.234`
-- Java 8 (`zulu-8.jdk`) установлена локально (для сборки)
-- Java 8 (`java-8-openjdk-amd64`) установлена на удалённом сервере
-- `rsync` установлен локально
-
-## Скрипты
-
-### 1. Деплой и запуск (`deploy-to-server.sh`)
-
-Собирает `FullNode.jar` локально, загружает его на сервер и запускает ноду.
-
-**Использование:**
-
-```bash
-./deploy-to-server.sh
-```
-
-**Действия:**
-
-- Компилирует проект через Gradle (`buildFullNodeJar`).
-- Останавливает существующий процесс `FullNode.jar`, если он запущен.
-- Копирует `FullNode.jar` и `config.conf` на сервер через `rsync`.
-- Запускает ноду в фоне с нужными параметрами Java.
-- Ждёт инициализацию и проверяет, что процесс поднялся.
+- SSH-доступ к `bisq@89.23.100.234` (по ключу)
+- Java 8 (`zulu-8.jdk`) локально — для сборки; Java 8 (`java-8-openjdk-amd64`) на сервере
+- `rsync` локально
 
 ---
 
-### 2. Проверка статуса (`check-server.sh`)
+## ⚙️ Первичная установка (один раз, требует root)
 
-Проверяет, запущена ли нода, и выводит важную информацию из логов.
+systemd-юнит, swap и sudoers-правило ставятся **один раз** через root-скрипт.
+Артефакты лежат в этом каталоге и копируются на сервер (в `…/kpt-tron/deploy/`)
+любым `deploy-to-server.sh`, либо вручную через `rsync`.
 
-**Использование:**
+Файлы установки:
+
+| Файл | Назначение |
+|------|-----------|
+| `kpt-tron.service` | systemd-юнит: heap `-Xms6g -Xmx12g`, graceful SIGTERM (300s на flush), `SuccessExitStatus=143` (SIGTERM-выход = успех), `Restart=on-failure`, `OOMScoreAdjust=-500` |
+| `setup-swap.sh` | создаёт swap-файл (4G, `vm.swappiness=10`) |
+| `sudoers-kpt-tron` | разрешает `bisq` управлять **только** `kpt-tron` без пароля (нужно скриптам) |
+| `kpt-tron-watchdog.{sh,service,timer}` | таймер (каждые 2 мин): рестартит ноду, если высота блока перестала расти при живом процессе (consensus-stall, который `Restart=on-failure` не ловит) |
+| `install-root.sh` | ставит всё перечисленное разом (+ включает watchdog-таймер) |
+
+**Запуск на сервере (нужен пароль sudo):**
 
 ```bash
-./check-server.sh
+sudo bash /home/bisq/kpt/kpt-tron/deploy/install-root.sh
 ```
 
-**Вывод:**
+Скрипт **намеренно не стартует ноду** — сначала должен быть развёрнут снапшот БД
+(см. `crypto/kpt/scripts/tron-grid-api/lite-node/`). После распаковки снапшота:
 
-- Статус процесса (**RUNNING / NOT RUNNING**) и PID.
-- Статус HTTP API (порт 8091).
-- Последние 10 строк лог-файла (`logs/console.log`).
+```bash
+sudo systemctl enable kpt-tron    # автостарт при загрузке
+sudo systemctl start  kpt-tron    # запустить сейчас
+```
+
+> После установки `sudoers-kpt-tron` команды `start/stop/restart/status/enable/disable`
+> для `kpt-tron` работают **без пароля** — поэтому скрипты ниже неинтерактивны.
 
 ---
 
-### 3. Остановка ноды (`stop-on-server.sh`)
+## Управляющие скрипты (запускаются локально)
 
-Корректно останавливает процесс FullNode на сервере.
+| Скрипт | Что делает |
+|--------|-----------|
+| `deploy-to-server.sh` | Сборка `FullNode.jar` → синк deploy-артефактов → **graceful stop** сервиса → синк jar+config → **start** → проверка |
+| `start-on-server.sh` | `systemctl start kpt-tron` + проверка |
+| `stop-on-server.sh` | `systemctl stop kpt-tron` (SIGTERM, ждёт flush до 300s — **безопасно**) |
+| `restart-on-server.sh` | `systemctl restart kpt-tron` |
+| `check-server.sh` | статус юнита + HTTP API (8091, высота блока) + RAM/Swap + хвост лога |
+| `logs-server.sh [full\|tail\|N]` | показать `logs/tron.log` (лог приложения от logback) |
+| `remove-from-server.sh` | **деструктивно**: остановить и удалить каталог ноды |
 
-**Использование:**
+> ⚠️ Никогда не завершайте ноду через `kill -9` / `pkill -9`. Прерванный flush
+> RocksDB-checkpoint — вероятная причина инцидента с расхождением состояния
+> (см. `crypto/kpt/docs/TRON_NODE_SYNC_INCIDENT_2026-07-05.md`).
 
-```bash
-./stop-on-server.sh
-```
+## Watchdog высоты блока
 
-**Действия:**
+`kpt-tron-watchdog.timer` запускает `kpt-tron-watchdog.sh` **каждые 2 минуты** (от root).
+Юнит-настройки ловят краши/OOM (`Restart=on-failure`), но **consensus-stall** — когда
+процесс жив и API отвечает, а локальная голова блока перестала расти — процесс не завершает,
+поэтому systemd его не видит. Watchdog закрывает именно эту дыру:
 
-- Отправляет процессу `SIGTERM`.
-- Ждёт завершения.
-- Если процесс не завершился — принудительно завершает (`SIGKILL`).
-
----
-
-### 4. Запуск ноды (`start-on-server.sh`)
-
-Запускает FullNode на удалённом сервере (без сборки и переноса файлов).
-
-**Использование:**
-
-```bash
-./start-on-server.sh
-```
-
-**Действия:**
-
-- Проверяет, что нода ещё не запущена.
-- Определяет путь к Java 8 на сервере.
-- Запускает `FullNode.jar` в фоне, вывод пишет в `logs/console.log`.
-- Проверяет, что процесс успешно стартовал.
-
----
-
-### 5. Удаление ноды (`remove-from-server.sh`)
-
-**Деструктивное действие.** Останавливает ноду и удаляет все развернутые файлы с сервера.
-
-**Использование:**
+- проверяет только `active`-сервис (уважает ручной `stop` и не мешает `Restart=on-failure`);
+- пропускает окно прогрева (`STARTUP_GRACE=180s`) и cooldown после рестарта (`COOLDOWN=600s`);
+- если голова не выросла **3 проверки подряд** (≈6 мин) или API не отвечает — делает
+  `systemctl restart kpt-tron` (graceful).
 
 ```bash
-./remove-from-server.sh
+systemctl list-timers kpt-tron-watchdog     # когда следующий запуск
+journalctl -u kpt-tron-watchdog -n 50       # что решал watchdog
 ```
+Пороги переопределяются через env в `kpt-tron-watchdog.service` (`STALL_STRIKES_MAX`,
+`STARTUP_GRACE`, `COOLDOWN`). Логику `.sh` можно менять обычным деплоем (без root) —
+`.service` ссылается на скрипт в `deploy/`.
 
-**Действия:**
+## Логи
 
-- Запрашивает подтверждение.
-- Останавливает процесс.
-- Удаляет `/home/bisq/kpt/kpt-tron` полностью.
+- **Логи приложения** (logback): `logs/tron.log` (+ ротация `tron-YYYY-MM-DD.N.log.gz`).
+  Смотреть: `./logs-server.sh tail` или `journalctl -u kpt-tron -f` для systemd-вывода.
+- **Консоль/старт/uncaught** (stdout+stderr сервиса): `logs/console.log`.
+- **systemd/journal**: `journalctl -u kpt-tron`.
 
 ## Пример рабочего процесса
 
-1. **Задеплоить ноду:**
+```bash
+# первичная установка (один раз, на сервере, с паролем sudo)
+sudo bash /home/bisq/kpt/kpt-tron/deploy/install-root.sh
+# ... развернуть снапшот БД ...
+sudo systemctl enable kpt-tron && sudo systemctl start kpt-tron
 
-   ```bash
-   ./deploy-to-server.sh
-   ```
-
-2. **Проверить статус:**
-
-   ```bash
-   ./check-server.sh
-   ```
-
-3. **Перезапустить ноду (без пересборки):**
-
-   ```bash
-   ./stop-on-server.sh
-   ./start-on-server.sh
-   ```
-
-4. **Удалить ноду с сервера:**
-
-   ```bash
-   ./remove-from-server.sh
-   ```
+# повседневно (локально):
+./check-server.sh
+./restart-on-server.sh
+./deploy-to-server.sh    # выкатить новую сборку jar
+```
