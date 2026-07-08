@@ -42,6 +42,10 @@ if [ "$active" != "active" ] || [ -z "${node:-}" ]; then
 elif [ -n "${main:-}" ] && [ "$behind" -gt "$BEHIND_THRESHOLD" ]; then
     reason="⚠️ рассинхрон: отставание ${behind} блоков (порог ${BEHIND_THRESHOLD})"
 fi
+# FORCE=1 (ручной полный отчёт) — слать ресурсы+лог даже когда всё в порядке.
+if [ "${FORCE:-0}" = "1" ] && [ -z "$reason" ]; then
+    reason="ℹ️ ручной полный отчёт (behind=${behind})"
+fi
 if [ -z "$reason" ]; then
     log "healthy (active, behind=${behind}) — skip diag"
     exit 0
