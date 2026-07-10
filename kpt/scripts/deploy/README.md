@@ -82,12 +82,21 @@ sudo systemctl start  kpt-tron    # запустить сейчас
 - если голова не выросла **3 проверки подряд** (≈6 мин) или API не отвечает — делает
   `systemctl restart kpt-tron` (graceful).
 
+Рестарт JVM лечит только внутрипроцессные проблемы. Если после
+**3 рестартов подряд** (`RESTARTS_NO_PROGRESS_MAX`) высота так и не сдвинулась
+(например, БД побита жёстким ресетом — «Tapos failed», инцидент 2026-07-10),
+watchdog **перестаёт рестартовать** и шлёт алерт в Telegram (креды — тот же
+`~/.config/tron-telegram.env`, что у sync-report; повтор каждые 6 ч,
+`ALERT_INTERVAL=21600`). Счётчик сбрасывается любым реальным ростом высоты,
+ручным `systemctl restart` или перезагрузкой сервера — надзор возобновляется.
+
 ```bash
 systemctl list-timers kpt-tron-watchdog     # когда следующий запуск
 journalctl -u kpt-tron-watchdog -n 50       # что решал watchdog
 ```
 Пороги переопределяются через env в `kpt-tron-watchdog.service` (`STALL_STRIKES_MAX`,
-`STARTUP_GRACE`, `COOLDOWN`). Логику `.sh` можно менять обычным деплоем (без root) —
+`STARTUP_GRACE`, `COOLDOWN`, `RESTARTS_NO_PROGRESS_MAX`, `ALERT_INTERVAL`).
+Логику `.sh` можно менять обычным деплоем (без root) —
 `.service` ссылается на скрипт в `deploy/`.
 
 ## Логи
