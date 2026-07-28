@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Posts kpt-tron node sync status to a Telegram group, formatted like
-# block-height-diff.sh (speed + ETA). Intended to run via cron 4x/day.
+# block-height-diff.sh (speed + ETA). Intended to run via cron daily at 09:00
+# (problem-triggered alerts are handled separately by tron-diag-report.sh).
 #
 # Secrets live in an env file (NOT committed), default /home/bisq/.config/tron-telegram.env:
 #     TG_BOT_TOKEN="123456:ABC-..."
