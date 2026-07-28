@@ -35,7 +35,8 @@ COOLDOWN="${COOLDOWN:-600}"                      # s to wait after a restart bef
 RESTARTS_NO_PROGRESS_MAX="${RESTARTS_NO_PROGRESS_MAX:-3}"  # give up restarting after this many fruitless restarts
 ALERT_INTERVAL="${ALERT_INTERVAL:-21600}"        # s between repeated give-up alerts (6 h)
 # Secrets live in the same env file the sync report uses (TG_BOT_TOKEN, TG_CHAT_ID);
-# root can read it. api.telegram.org resolves to unrouted IPv6 here, so pin IPv4.
+# root can read it. api.telegram.org: system DNS first, pinned IPv4 as fallback
+# (the unrouted-IPv6 DNS issue on this host has come and gone).
 TG_ENV="${TRON_TG_ENV:-/home/bisq/.config/tron-telegram.env}"
 TG_IP="${TG_IP:-149.154.167.220}"
 
@@ -51,10 +52,15 @@ send_alert() {
     if [ -z "${TG_BOT_TOKEN:-}" ] || [ -z "${TG_CHAT_ID:-}" ]; then
         log "alert skipped: TG_BOT_TOKEN/TG_CHAT_ID empty in $TG_ENV"; return 1
     fi
+    # Prefer system DNS; only if it is unreachable fall back to the pinned
+    # IPv4 (the unrouted-IPv6 issue on this host has come and gone).
+    local tg_resolve=""
+    curl -s -m 5 -o /dev/null https://api.telegram.org 2>/dev/null \
+        || tg_resolve="--resolve api.telegram.org:443:${TG_IP}"
     local esc http
     esc=$(printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
     http=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
-        --resolve "api.telegram.org:443:${TG_IP}" \
+        $tg_resolve \
         "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
         --data-urlencode "chat_id=${TG_CHAT_ID}" \
         --data-urlencode "text=<pre>${esc}</pre>" \

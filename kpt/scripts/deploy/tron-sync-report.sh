@@ -12,8 +12,9 @@
 # (ts node mainnet) is kept in its own file, separate from the manual
 # block-height-diff.sh state (/tmp/tron_sync_state.txt), so they don't clash.
 #
-# Note: this host reaches api.telegram.org only via IPv4 149.154.167.220
-# (DNS returns IPv6 which is unrouted here), so we pin it with --resolve.
+# Note: api.telegram.org is reached via system DNS when possible; if that is
+# unreachable (this host has intermittently had unrouted-IPv6 DNS answers),
+# the request falls back to pinned IPv4 ${TG_IP} via --resolve.
 set -uo pipefail
 
 ENV_FILE="${TRON_TG_ENV:-/home/bisq/.config/tron-telegram.env}"
@@ -31,6 +32,12 @@ if [ -z "${TG_BOT_TOKEN:-}" ] || [ -z "${TG_CHAT_ID:-}" ]; then
     log "TG_BOT_TOKEN/TG_CHAT_ID empty in $ENV_FILE — skip"; exit 0
 fi
 
+# api.telegram.org: prefer system DNS; only if it is unreachable fall back to
+# the pinned IPv4 (the unrouted-IPv6 issue on this host has come and gone).
+TG_RESOLVE=""
+curl -s -m 5 -o /dev/null https://api.telegram.org 2>/dev/null \
+    || TG_RESOLVE="--resolve api.telegram.org:443:${TG_IP}"
+
 # --- gather ---
 active=$(systemctl is-active kpt-tron 2>/dev/null || echo unknown)
 node=$(curl -s -m 8 -X POST "$NODE_API/wallet/getnowblock" -d '{}' 2>/dev/null | grep -o '"number":[0-9]*' | head -1 | cut -d: -f2)
@@ -47,7 +54,7 @@ send() {
     esc=$(printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
     local http
     http=$(curl -s -o /tmp/tron-tg-report.out -w '%{http_code}' -m 15 \
-        --resolve "api.telegram.org:443:${TG_IP}" \
+        $TG_RESOLVE \
         "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
         --data-urlencode "chat_id=${TG_CHAT_ID}" \
         --data-urlencode "text=<pre>${esc}</pre>" \

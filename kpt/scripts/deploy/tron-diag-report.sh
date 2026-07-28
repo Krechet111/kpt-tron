@@ -25,6 +25,12 @@ if [ -z "${TG_BOT_TOKEN:-}" ] || [ -z "${TG_CHAT_ID:-}" ]; then
 fi
 API="https://api.telegram.org/bot${TG_BOT_TOKEN}"
 
+# api.telegram.org: prefer system DNS; only if it is unreachable fall back to
+# the pinned IPv4 (the unrouted-IPv6 issue on this host has come and gone).
+TG_RESOLVE=""
+curl -s -m 5 -o /dev/null https://api.telegram.org 2>/dev/null \
+    || TG_RESOLVE="--resolve api.telegram.org:443:${TG_IP}"
+
 # --- node quick context + problem gate ---
 # Only send the diag (resources + log) when something is wrong: the service is
 # not active / API is down, OR the node is desynced by more than the threshold.
@@ -81,7 +87,7 @@ ${IO:-   (нет данных)}
 
 esc=$(printf '%s' "$MSG" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
 http_msg=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
-    --resolve "api.telegram.org:443:${TG_IP}" \
+    $TG_RESOLVE \
     "${API}/sendMessage" \
     --data-urlencode "chat_id=${TG_CHAT_ID}" \
     --data-urlencode "text=<pre>${esc}</pre>" \
@@ -92,7 +98,7 @@ http_msg=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
 TMP="/tmp/tron-log-tail.$$.log"
 tail -n "$TAIL_LINES" "$LOG_FILE" > "$TMP" 2>/dev/null || echo "(no log)" > "$TMP"
 http_doc=$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
-    --resolve "api.telegram.org:443:${TG_IP}" \
+    $TG_RESOLVE \
     "${API}/sendDocument" \
     -F "chat_id=${TG_CHAT_ID}" \
     -F "caption=tron.log — последние ${TAIL_LINES} строк ($(date '+%H:%M %Z'))" \
